@@ -1,0 +1,295 @@
+Option Compare Database
+Option Explicit
+
+Public Enum Formato
+    SinFormato = 1
+    HorasMinutos = 2
+    Moneda = 3
+    NumeroEntero = 4
+    Fecha = 5
+    PorcentajeConDecimales = 6
+    PorcentajeSinDecimales = 7
+    NumeroCon2Decimales = 8
+    SinFormato2 = 9
+End Enum
+    
+
+
+
+Public Function SQLtoTXT(sSQL As String _
+                      , sTitulo As String _
+                      , sOtros As String) As String
+'Devuelve un listado formateado de la SQL, con un título, las cabeceras de las columnas, sus valores y totales que se soliciten
+'el parámetro sOtros se utiliza como sigue: por ejemplo: "0110111,00101500301212,0230133,0510188,0000011
+                                                         'VVV....,AaAaAa........,LLL....,FFF....,TTT....
+'V: es un valor de un dígito 0/1 que indica si se imprime la columna correspondiente al la posicion , ej: 101, ...-> se imprimen las columnas 1ª y 3ª, la 2ª no.
+'Aa: valor de dos dígitos donde se indica la anchura de la columna correspondiente (hay que ocupar los de las columnas que no se  impriman, ej: 101,100018,... la 1ª columna tiene una anchura de 10 caracteres y la 3ª de 18
+'L: valor de un dígito que indica la alineación de los valores en la columna: 1= alin. izquierda, 2 = centrada, 3 = derecha
+'F: valor de un dígito que indica el formato de los datos: 1: sin formato, 2: Horas:Minutos., 3: €, 4: #.##0, 5: dd/mm/yy, 6: %,00 , 7: % , 8: #.##0,00
+'T: es un valor de un dígito 0/1 que indica si se calcula total de la columna correspondiente al la posicion EN LA PRIMERA COLUMNA NO SE CALCULA TOTAL
+'Si la SQL tiene más columnas que las indicadas en sOtros, las columnas restantes repiten los valores de parámetros de la última columna.
+
+    Dim rs As Recordset, iFieldsCount As Integer, sResult As String
+    Dim i As Integer, k As Integer, intC1 As Integer, intC2 As Integer, intC3 As Integer, intC4 As Integer, intC5 As Integer
+    Dim bColVisible() As Boolean, iColAncho() As Integer, iColAlin() As Integer, iColForm() As Formato, bColTotal() As Boolean
+    Dim dblTotal() As Double
+    On Error GoTo HandleError
+    Set rs = CurrentDb.OpenRecordset(sSQL, dbOpenSnapshot)
+    iFieldsCount = rs.Fields.Count
+    '---
+    ' Se procesa sOtros para obtener anchuras, formatos, etc. de las columnas
+    '---
+    ReDim bColVisible(iFieldsCount - 1) As Boolean
+    ReDim iColAncho(iFieldsCount - 1) As Integer
+    ReDim iColAlin(iFieldsCount - 1) As Integer
+    ReDim iColForm(iFieldsCount - 1) As Formato
+    ReDim bColTotal(iFieldsCount - 1) As Boolean
+    ReDim dblTotal(iFieldsCount - 1) As Double
+    intC1 = InStr(1, sOtros, ",")
+    intC2 = InStr(intC1 + 1, sOtros, ",")
+    intC3 = InStr(intC2 + 1, sOtros, ",")
+    intC4 = InStr(intC3 + 1, sOtros, ",")
+    intC5 = InStr(intC4 + 1, sOtros, ",")
+    For i = 1 To iFieldsCount
+        If k = 0 Then
+            'Si en sOtros ya no se especifican más columnas....
+            If Mid(sOtros, i, 1) = "," Then k = i - 1
+        End If
+        If k > 0 Then
+            bColVisible(i - 1) = CInt(Mid(sOtros, k, 1)) = 1
+            iColAncho(i - 1) = CInt(Mid(sOtros, intC1 + 1 + (k - 1) * 2, 2))
+            iColAlin(i - 1) = CInt(Mid(sOtros, intC2 + k, 1))
+            iColForm(i - 1) = CInt(Mid(sOtros, intC3 + k, 1))
+            bColTotal(i - 1) = CInt(Mid(sOtros, intC4 + k, 1))
+        Else
+            bColVisible(i - 1) = CInt(Mid(sOtros, i, 1)) = 1
+            iColAncho(i - 1) = CInt(Mid(sOtros, intC1 + 1 + (i - 1) * 2, 2))
+            iColAlin(i - 1) = CInt(Mid(sOtros, intC2 + i, 1))
+            iColForm(i - 1) = CInt(Mid(sOtros, intC3 + i, 1))
+            bColTotal(i - 1) = CInt(Mid(sOtros, intC4 + i, 1))
+        End If
+    Next i
+Cabecera:
+    '---
+    ' Imprimir título y cabecera de columnas
+    '---
+    sResult = sTitulo & vbCrLf & vbCrLf
+    Dim iPaso As Integer
+    For iPaso = 1 To 3
+        For i = 0 To iFieldsCount - 1
+            If bColVisible(i) = True Then
+                If iPaso = 1 Or iPaso = 3 Then
+                    sResult = sResult & RellenarChar("", iColAncho(i), "_") & " "
+                Else
+                    sResult = sResult & RellenarChar(rs.Fields(i).Name, iColAncho(i), " ", 3) & " "
+                End If
+            End If
+        Next i
+        sResult = Left(sResult, Len(sResult) - 1) & vbCrLf
+    Next iPaso
+
+Detalle:
+    Dim Dato As String
+    While Not rs.EOF
+        For i = 0 To iFieldsCount - 1
+            If bColTotal(i) <> 0 Then  ' acumula totales
+                dblTotal(i) = dblTotal(i) + IIf(IsNumeric(rs(i)), rs(i), 0)
+            End If
+            If bColVisible(i) Then
+                Dato = DatoFormateado(rs(i), iColForm(i))
+                sResult = sResult & RellenarChar(Nz(Dato), iColAncho(i), " ", iColAlin(i))
+                If i < iFieldsCount - 1 Then sResult = sResult & " "
+            End If
+            
+        Next i
+        sResult = sResult & vbCrLf
+        rs.MoveNext
+    Wend
+
+Totales:
+    Dim j As Integer
+    For i = 0 To iFieldsCount - 1
+        If bColVisible(i) Then
+            sResult = sResult & RellenarChar("", iColAncho(i), "_")
+            If i < iFieldsCount - 1 Then sResult = sResult & " "
+        End If
+    Next i
+    sResult = sResult & vbCrLf
+    'Ver el primer campo que se imprime si es de totales o no ----> ara poner en la primera columna TOTALES
+    For i = 0 To iFieldsCount - 1
+        If bColVisible(i) Then Exit For
+    Next i
+    If i = iFieldsCount Then GoTo Result
+    
+    If bColTotal(i) = False Then
+        sResult = sResult & RellenarChar("TOTALES", iColAncho(i), " ") & " "
+        j = i + 1
+    Else
+        j = i
+    End If
+    For i = j To iFieldsCount - 1
+        If bColVisible(i) Then
+            If bColTotal(i) = False Then
+                sResult = sResult & RellenarChar("", iColAncho(i), " ")
+            Else
+                Dato = DatoFormateado(dblTotal(i), iColForm(i))
+                sResult = sResult & RellenarChar(Dato, iColAncho(i), " ")
+            End If
+            If i < iFieldsCount - 1 Then sResult = sResult & " "
+        End If
+    Next i
+    sResult = sResult & vbCrLf
+    For i = 0 To iFieldsCount - 1
+        If bColVisible(i) Then
+            sResult = sResult & RellenarChar("", iColAncho(i), "_") & " "
+        End If
+    Next i
+    sResult = Left(sResult, Len(sResult) - 1) & vbCrLf
+Result:
+    SQLtoTXT = sResult
+
+HandleExit:
+    Exit Function
+HandleError:
+    Select Case Err
+        Case Else
+            MsgBox "Error nº " & Err & vbCrLf & Err.Description
+            
+    End Select
+    Resume HandleExit
+End Function
+
+Function RellenarChar(sOriginal As String _
+                    , iAncho As Integer _
+                    , caracterRelleno As String _
+           , Optional iDchaIzdaCentro As Integer = 1) As String
+    Dim iAnchoOriginal As Integer, sIzda As String, sDcha As String
+    iAnchoOriginal = Len(sOriginal)
+    'Rellena un string con un caracter hasta alcanzar el ancho determinado
+    'Se parametriza el caracter de relleno y la alineación
+    'RellenarChar("titulo", 25, "-", 1)----> titulo-------------------
+    'RellenarChar("titulo", 25, "-", 3)----> -------------------titulo
+    'RellenarChar("titulo", 25, "-", 2)----> ---------titulo----------
+    'RellenarChar("titulo", 3, "-", [123])----> tit
+    
+    If iAnchoOriginal < iAncho Then
+        ' Rellenar el string si es más corto
+        Select Case iDchaIzdaCentro
+            Case 1
+                sIzda = "": sDcha = String(iAncho - iAnchoOriginal, caracterRelleno)
+            Case 3
+                sIzda = String(iAncho - iAnchoOriginal, caracterRelleno): sDcha = ""
+            Case 2
+                Dim iAnchoI As Integer, iAnchoD As Integer
+                iAnchoI = (iAncho - iAnchoOriginal) \ 2
+                iAnchoD = iAncho - iAnchoOriginal - iAnchoI
+                sIzda = String(iAnchoI, caracterRelleno): sDcha = String(iAnchoD, caracterRelleno)
+        End Select
+        RellenarChar = sIzda & sOriginal & sDcha
+    Else
+        ' Recortar o Mantener el mismo string
+        RellenarChar = Mid(sOriginal, 1, iAncho)
+    End If
+End Function
+
+Private Function DatoFormateado(Valor As Variant, iFormato As Formato) As String
+    On Error GoTo HandleError
+    Dim Dato As String
+    Select Case iFormato
+        Case SinFormato, SinFormato2
+            Dato = CStr(Nz(Valor))
+        Case HorasMinutos
+            Dato = Format(CDate(Valor), "hh:nn")
+        Case Moneda
+            If Not IsNumeric(Valor) Then
+                Dato = CStr(Nz(Valor))
+            Else
+                Dato = Format(Valor, "Currency")
+            End If
+        Case NumeroEntero
+            If Not IsNumeric(Valor) Then
+                Dato = CStr(Nz(Valor))
+            Else
+                Dato = Format(Valor, "#,##0")
+            End If
+        Case Fecha
+            If Not IsDate(Valor) Then
+                Dato = CStr(Nz(Valor))
+            Else
+                Dato = Format(Valor, "dd mmm yy")
+            End If
+        Case PorcentajeConDecimales
+            If Not IsNumeric(Valor) Then
+                Dato = CStr(Nz(Valor))
+            Else
+                Dato = Format(Valor * 100, "0.00") & "%"
+            End If
+        Case PorcentajeSinDecimales
+            If Not IsNumeric(Valor) Then
+                Dato = CStr(Nz(Valor))
+            Else
+                Dato = Format(Valor * 100, "0.0") & "%"
+            End If
+        Case NumeroCon2Decimales
+            If Not IsNumeric(Valor) Then
+                Dato = CStr(Nz(Valor))
+            Else
+                Dato = Format(Valor, "#,##0.00")
+            End If
+    End Select
+    DatoFormateado = Dato
+    
+HandleExit:
+    Exit Function
+HandleError:
+    Select Case Err
+        Case 13: Resume Next
+    End Select
+    MsgBox Err.Description
+    Resume HandleExit
+End Function
+
+Sub ExportarTexto(ByVal texto As String _
+                , ByVal rutaArchivo As String _
+                , Optional bAbrirArchivo As Boolean = False)
+    On Error GoTo HandleError
+    Dim fso As Object
+    Dim archivoTexto As Object
+    
+    ' Crear un objeto FileSystemObject
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    
+    ' Comprobar si el archivo ya existe, si es así, borrarlo
+    If fso.FileExists(rutaArchivo) Then
+        fso.DeleteFile (rutaArchivo)
+    End If
+    
+    ' Crear un archivo de texto
+    Set archivoTexto = fso.CreateTextFile(rutaArchivo, True)
+    
+    ' Escribir el texto en el archivo
+    archivoTexto.Write texto
+    
+    ' Cerrar el archivo
+    archivoTexto.Close
+    
+    ' Liberar los objetos
+    Set archivoTexto = Nothing
+    Set fso = Nothing
+    If bAbrirArchivo Then Shell "cmd /c start " & rutaArchivo
+    
+HandleExit:
+    Exit Sub
+HandleError:
+    MsgBox Err.Description
+    Resume HandleExit
+End Sub
+
+
+Public Sub popo()
+    Dim sR As String
+    sR = SQLtoTXT("qClientes", "Listado de Clientes", "11,0515,31,11,00")
+    ExportarTexto sR, "popo1.txt", True
+    sR = SQLtoTXT("qVentas", "Listado de Ventas", "11111111,1510153005100812,11113323,11114363,00001001")
+    ExportarTexto sR, "popo2.txt", True
+End Sub
