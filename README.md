@@ -7,6 +7,8 @@ Se presenta aquí una función concebida para formatear el texto de salida de un
 
 --- 
 
+![imagen](./images/SQL2TXT.JPG)
+
 La explicación extraida de los comentarios del código --
 Devuelve un listado formateado de la SQL, con un título, las cabeceras de las columnas, sus valores y totales que se soliciten
 el parámetro sOtros se utiliza como sigue: por ejemplo: "0110111,00101500301212,0230133,0510188,0000011
@@ -19,3 +21,6 @@ T: es un valor de un dígito 0/1 que indica si se calcula total de la columna co
 Si la SQL tiene más columnas que las indicadas en sOtros, las columnas restantes repiten los valores de parámetros de la última columna.
 
 Se ofrecen 2 ejemplos de demostración y un 3º para probar tú mism@ modificando los parámetros de la función.
+
+
+
