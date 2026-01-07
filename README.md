@@ -31,5 +31,7 @@ Si la SQL tiene más columnas que las indicadas en sOtros, las columnas restante
 
 Se ofrecen 2 ejemplos de demostración y un 3º para probar tú mism@ modificando los parámetros de la función.
 
+En el fichero SQL2TXT.rar se encuentra el fichero accdb de ejemplo.
+
 
 
